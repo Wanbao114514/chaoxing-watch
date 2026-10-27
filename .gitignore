@@ -1,0 +1,10 @@
+# 运行产物
+*.png
+*.jpg
+*.jpeg
+*.log
+
+# 系统
+.DS_Store
+Thumbs.db
+desktop.ini
