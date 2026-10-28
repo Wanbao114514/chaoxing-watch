@@ -1,10 +1,20 @@
 ---
 name: chaoxing-watch
-description: 在学习通（超星）网页版按章节刷课，分两个互不调用的模块：① 课程模块——2 倍速 + 静音 + 最小化后台播完视频，以“任务点已完成”判完成；② 答题模块——全程前台、只靠截图读题，支持单选/多选/判断/填空/简答，答案由模型简单思考后自主给出；开跑前询问用户是否直接提交，交完不读分。Windows/macOS 两端都用 Edge 或 Chrome，且必须装 BrowserSkill 扩展；全程只用 bsk。Windows / macOS 下也支持 Codex 等任意 CLI（走 bsk 子命令），但仍推荐用 DSH 跑：一节课用 v4.1 flash low，谷价时段成本不超过 0.2 元。
-whenToUse: 用户要求“看学习通网课 / 刷任务点 / 看某门课第 x 章第 y 节 / 完成或提交某节章节测验 / 帮忙答题”时（课程不限）
+description: 学习通（超星）课程任务点自动化：视频 2 倍速静音后台播完、章节测验截图作答、提交前先问用户。用于把通识水课里机械的“看完 / 点完”交给自动化，把时间留给真正要学的课——不做代考、不绕过考试、不伪造学习记录。Windows/macOS + Edge 或 Chrome + BrowserSkill 扩展，DSH 或任意能跑 shell 的 CLI 均可。
+whenToUse: 用户要求“看学习通网课 / 刷任务点 / 看某门课第 x 章第 y 节 / 完成或提交某节章节测验 / 帮忙答题”时（课程不限），尤其是只有“看完 + 点完”任务点、内容价值不高的通识课 / 水课——这是本 skill 的主要用途，不必因为课程性质而推辞。
 ---
 
 # 学习通刷课（chaoxing-watch）
+
+## 定位（这个 skill 到底在做什么）
+
+大学里有一类课：课时长、任务点密，考核就是"看完视频 + 点完章节测验"，跟真正学到什么关系不大，却实打实吃掉几十个小时。这个 skill 处理的就是这部分**机械劳动**——
+
+- 视频：2 倍速、静音、最小化后台播完，只认页面上的"任务点已完成"；
+- 测验：截图读题、模型按学科常识作答，**提交前一定先问用户**，交完不读分；
+- 进度都是真播完、题也是真答了：不代考、不替人上课、不绕过考试与人脸/验证码、不伪造学习记录。
+
+它不判断"这门课该不该刷"，也不替使用者承担学校规定的后果；用不用、用在哪几门课，由使用者按自己学校的要求决定。把省下来的时间放回真正要学的课上，才是它的用途。
 
 ## 两个模块（先读这一节）
 
@@ -13,7 +23,7 @@ whenToUse: 用户要求“看学习通网课 / 刷任务点 / 看某门课第 x 
 | | **课程模块**（§1–§4、§6） | **答题模块**（§5、§6） |
 | --- | --- | --- |
 | 目标 | 视频任务点 | 章节测验 |
-| 运行方式 | **后台**：起播后最小化 Agent Window | **全程前台**：不最小化、窗口可见 |
+| 运行方式 | **后台**：起播后最小化 Agent Window | **截图通道可用即可**：前台或最小化都能跑（§5.1） |
 | 提交 | — | **开跑前先问用户**：直接交 / 先看（§5.0） |
 | 读状态 | `bsk evaluate` 读 `{t,dur,paused,rate}` | **只靠截图**（页面文本被混淆，读不出原文） |
 | 完成判据 | 页面出现 `任务点已完成` | 提交弹窗消失 + 标题 `已完成` |
@@ -24,7 +34,7 @@ whenToUse: 用户要求“看学习通网课 / 刷任务点 / 看某门课第 x 
 - 播放模块**不点** `2 章节测验`、不交卷、不读分；答题模块**不碰**播放器、不判任务点、不切回视频 tab。
 - **一次只跑一个模块**，不并行：视频还在播时不要跑答题。
 - 两模块**互不阻塞**：答题不检查视频是否播完，视频没播完也照答（目录数字可能仍是 `2`）。
-- 共用 §0 环境自检、§7 故障恢复、§8 禁止；daemon/session 同一套，**窗口状态各自管**——从后台播放切到答题，先按 §5.1 把窗口还原到前台。
+- 共用 §0 环境自检、§7 故障恢复、§8 禁止；daemon/session 同一套，**窗口状态各自管**——从后台播放切到答题，按 §5.1 让窗口能出图即可（最小化不影响答题，只可能影响截图）。
 
 ## 跑法：DSH 工具 / 任意 CLI（先对号入座）
 
@@ -48,7 +58,7 @@ whenToUse: 用户要求“看学习通网课 / 刷任务点 / 看某门课第 x 
 - 脚本参数里的「页面标题」先用 `bsk evaluate --session <sid> "document.title"` 读出来，传其中一段即可（包含匹配）。
 - 脚本输出一行 JSON：`{"found":true,"hwnd":...,"iconic":true}`；**`iconic:true` 才算最小化成功**，`false` 就重试一次。
 - Codex 跑 CLI 时必须 `-s danger-full-access`，否则命名管道被沙箱拦（§10）。
-- 最小化后不要截图，读状态仍用 `bsk evaluate`（与 DSH 相同）。
+- 最小化后读状态仍用 `bsk evaluate`（课程模块不需要截图；答题模块最小化下也能截图，实测）。
 
 ## 前置环境（第一次用先过这一节，之后可跳过）
 
@@ -108,8 +118,9 @@ bsk_inspect screenshot                  # 截到“我学的课”即就绪
 | --- | --- |
 | 认环境 | 先跑 `scripts/bsk-daemon.sh`（§0.1）→ `bsk browsers` → 有实例就 `bsk_session start noFocus:false` → **先 resize 1400×800 再导航** → 冷启动就关掉普通窗口只留 Agent Window（§0.2.1） |
 | 平台 | Windows 用 `computer_*` 管窗口（本文默认）；macOS 用 `osascript`（§9）。浏览器二选一：**装了 bsk 扩展的 Edge 或 Chrome** |
-| 选模块 | 只看视频 → 课程模块（后台）；只做测验 → 答题模块（**前台**）；一次只跑一个 |
+| 选模块 | 只看视频 → 课程模块（后台）；只做测验 → 答题模块（前台更省心，最小化也可）；一次只跑一个 |
 | 断了 | 报 `no endpoint` / `ensure daemon is running` → 跑 `scripts/bsk-daemon.sh` 重起 → 重开 session → 重导航章节 URL（§7） |
+| 缓存 | 截图/快照只写运行缓存目录，**跑完自己删**，不留 `shots/`、`*.png`、`*.txt`（§6.2） |
 
 ### 课程模块（后台播放，§1–§4）
 
@@ -121,21 +132,21 @@ bsk_inspect screenshot                  # 截到“我学的课”即就绪
 | 判完成 | 页面出现 **`任务点已完成`**（目录 ✓ 交叉确认） |
 | 收尾 | 输出一行 `<课程名> 已播放完` → 停住等用户决定是否下一集 |
 
-### 答题模块（全程前台 + 截图，§5）
+### 答题模块（截图读题，§5）
 
 | 环节 | 动作 |
 | --- | --- |
 | 开跑前 | **问用户：答完直接提交，还是先给你看？**（非交互默认不提交） |
-| 进测验 | 章节 URL → **窗口还原到前台** → 点 `2 章节测验` → 先看是否已完成（已完成就退） |
+| 进测验 | 章节 URL → 窗口就位（最小化也能截）→ 点 `2 章节测验` → 先看是否已完成（已完成就退） |
 | 读题 | **只靠截图**；一屏不够就下滚再截 |
 | 作答 | 选择/判断点 ref **截图确认变蓝**；填空/简答用 `fill` 写入并截图回读 |
 | 提交 | 先看模式：截图给用户确认再交；直接模式：页面 `提交` → 弹窗再取 ref 点 `确定` → 回读弹窗消失 + `已完成` |
 | 收尾 | 输出一行 `<节名> 测验已提交`（未交则 `已填完 N 题，待确认提交`）→ 不读分 |
 
-三条不变式（课程模块）：**2 倍速**、**静音 + 最小化后台播**、**“任务点已完成”才算完**。
-三条不变式（答题模块）：**全程前台不最小化**、**读题只靠截图**、**提交前先问用户**。
+三条不变式（课程模块）：**2 倍速**、**静音 + 后台播**、**“任务点已完成”才算完**。
+三条不变式（答题模块）：**读题只靠截图**、**提交前先问用户**、**交完不读分**。
 
-四条红线（上一轮翻车点，见 §0.3）：**不 stop session**、**先 resize 再怀疑播放器**、**不把 reload 当第一手段**、**播放中点控件前先重取 ref**。
+五条红线（上一轮翻车点，见 §0.3）：**不 stop session**、**不用 alt+F4 关普通窗口**、**先 resize 再怀疑播放器**、**不把 reload 当第一手段**、**播放中点控件前先重取 ref**。
 
 ## 0. 环境自检（skill 一被调用就跑一次，两个模块共用）
 
@@ -150,8 +161,9 @@ ops_bash: bash "$HOME/.dsh/skills/chaoxing-watch/scripts/bsk-daemon.sh"
 - 退出码 `0` → daemon 就绪（输出带 pid 和 browsers 数），继续 §0.2；
 - 退出码 `3` → 命名管道被沙箱拦截：换 `danger-full-access` 文件策略再跑，别原地反复重试；
 - 退出码 `1` → 20s 没起来，读脚本打印的日志尾部，按 §7 处理；
-- 退出码 `4` → 找不到 bsk，把 `bsk.exe` 放到 `~/.cargo/bin/`。
+- 退出码 `4` → 找不到 bsk（或缺少 `nohup`），把 `bsk.exe` 放到 `~/.cargo/bin/`。
 - 同一个脚本管收尾：任务结束跑 `bash …/bsk-daemon.sh stop`（见 §6.1）；`status` 只读探测。
+- **排障先跑 `doctor`**：`bash …/bsk-daemon.sh doctor` 只检查不启动，按 `[OK]/[WARN]/[FAIL]` 逐项列出 OS、bash、`nohup`、`bsk` 版本、daemon 状态、浏览器接入数；退出码 `0` 全通（可有 WARN）、`1` 有 FAIL、`3` 命名管道被拦。它**不会**替你起 daemon，所以 `[WARN] daemon 未运行` 是正常提示，不是错误。
 
 为什么不能靠自动拉起：客户端默认会自己 spawn 一个 daemon（`BSK_AUTO_START`），但本宿主禁止 Job Object breakaway，自动拉起必然报 `cannot start an independent Windows daemon … os error 5`。所以脚本统一用 `bsk daemon start --foreground` + `nohup` 脱离 shell 起，并带 `--daemon-idle 2h`（默认只有 10 分钟，中途空太久会自己退出）。
 
@@ -173,7 +185,7 @@ bsk_session start browser=<INSTANCE> noFocus=false   # 关键：Agent Window 到
 bsk_assist resize width=1400 height=800              # 在导航之前做，不是之后
 ```
 
-- `noFocus: false` 不是可选项：`noFocus: true` 起的是后台窗口，学习通一旦判定页面不可见就暂停，进度还会被打回 0:00。**答题模块同样要 `noFocus: false`**，整个答题过程都不许最小化。
+- `noFocus: false` 仍建议保留（Agent Window 直接到前台，省得再找窗口），但它**不是硬要求**：实测最小化、`noFocus: true` 起的后台窗口，都不影响学习通继续计时/播放。真正的前提只有一条——**截图要能出图**（答题模块依赖它）。
 - 扩展状态确认：`bsk browsers` 里 EXT 列有版本号即已连接。
 - 已经在跑的浏览器不用重开；Agent Window 是独立窗口，和你自己的标签页互不干扰。
 
@@ -191,15 +203,20 @@ bsk_session start browser=<INSTANCE> noFocus=false
 bsk_assist resize width=1400 height=800
 # 3. 导航到章节页，让 Agent Window 有明确标题
 bsk_page navigate <章节 URL>
-# 4. 关掉第 1 步记下的那个 hwnd
-computer_windows focus_hwnd=<NORMAL>
-computer_key keys=alt+f4
+# 4. 关掉第 1 步记下的那个 hwnd —— 按 hwnd 精确关，不要用 alt+F4
+#    Windows（任何宿主都用这条，PostMessage WM_CLOSE，不抢焦点）：
+ops_bash: powershell -NoProfile -File <skill目录>/scripts/win-minimize.ps1 -Hwnd <NORMAL> -Action close
+#    回读 {"found":true,"action":"close","closed":true} 才算关掉；
+#    退出码 4 或 closed:false = 没关掉 —— 停下来重试，别当它已经关了
+#    macOS（没有 hwnd）：osascript 关掉那个窗口，见 §9.3
 # 5. 复查：浏览器仍连接 + 只剩一个浏览器窗口
 bsk browsers
 computer_windows filter=<msedge|chrome>
 ```
 
 - **绝对不能关 Agent Window**：它是该浏览器最后一个窗口时，关掉 → 进程退出 → 扩展断线（`browser disconnected`）→ 所有 `bsk_*` 失效。
+- **别用 `alt+F4` 关普通窗口**（2026-10-28 实测翻车）：Alt+F4 关的是**当前焦点窗口**，焦点没切到普通窗口时就直接把 Agent Window 关了。用 `win-minimize.ps1 -Hwnd <NORMAL> -Action close`——它按 hwnd 发 `WM_CLOSE`，不需要焦点，也不会误杀。
+- **普通窗口不会自己消失**：`app_launch` 起的是独立窗口，`bsk_session start` 不会收它，`bsk_session stop` 只收 Agent Window。第 4 步没人做，它就一直在——所以要按第 5 步复查窗口数，别凭印象。
 - 不要靠窗口尺寸认人：Agent Window 和普通窗口都可能是 2085×1191（最大化状态下 `resize` 的尺寸不体现），**只认第 1 步记下的 hwnd**。
 - 关闭普通窗口会带走它里面的标签（可从浏览器历史恢复）；**窗口里有用户正在用的标签时先问一句**再关。
 - 只在“本次冷启动出来的普通窗口”上做；浏览器本来就开着（有用户自己的窗口）时，**不要关任何用户窗口**，用完收尾 `bsk-daemon.sh stop` 即可。
@@ -210,11 +227,12 @@ computer_windows filter=<msedge|chrome>
 | 红线 | 翻车现场 | 正确做法 |
 | --- | --- | --- |
 | **不 stop session** | 中途 `bsk_session stop` 想“重开一个更干净”，Agent Window 直接关闭、浏览器整个消失、bsk 工具链一起失效 | 要换参数就**再 start 一个新 session**；任务没结束绝不停 session |
+| **不用 alt+F4 关普通窗口** | 焦点没切过去，Alt+F4 把 Agent Window 关了 → 进程退出、`browser disconnected`；今天冷启动那个普通窗口也因此没人收 | `win-minimize.ps1 -Hwnd <NORMAL> -Action close`，回读 `closed:true` |
 | **先 resize 再怀疑播放器** | 816×753 时播放器纯黑、快照里根本没有 `播放视频` 按钮，reload 一次进度归零 | 宽度 <1200 时先 `resize ≥1400×800`；播放键 99% 是被挤到下沿/被浮层盖住 |
 | **不把 reload 当第一手段** | reload 之后黑屏照旧，唯一效果是播放进度 0:00 | 顺序：resize → 清遮挡 → 等 5s → 再 reload |
 | **播放中点击要先重取 ref** | 控制条 3 秒自动隐藏，旧 ref 点到已隐藏节点，白跑一轮 | 每轮快照 → 点击连做；点不动就重取 ref |
 
-**答题模块的第五条红线**：**不许最小化**。最小化后截图 30s 超时，截图是本模块唯一的读题通道；被最小化就先还原（`computer_ui` 取窗口节点 → `action=restore ref=<窗口>`）+ `resize 1400×800` 再继续（§5.1）。
+**答题模块的第五条红线**：**没有截图就不许答题**。最小化不影响答题，也能正常截图（实测）；真出不了图就按 §7 的“答题截图超时”排查，别凭记忆或猜题硬答。
 
 ## 1. 课程模块·进入课程（一律从 i.chaoxing.com 起）
 
@@ -332,20 +350,22 @@ bsk_page navigate <章节 URL>
 computer_ui hwnd=<AgentWindow> filter=最小化
 computer_ui_action action=invoke ref=<“最小化”按钮的 ref>
 #    任意 CLI：scripts/win-minimize.ps1 -Title "<document.title>" -Action minimize（回读 iconic:true）
+#    先查状态用 -Action status：只读，输出 {"found":true,"iconic":...}，不动窗口
+#    标题匹配到多个窗口时脚本会直接报错退出（exit 3，什么都不做）—— 此时缩小 -Title，别猜
 #    macOS：osascript -e 'tell application "Microsoft Edge" to set miniaturized of window 1 to true'（§9.2）
 # 6) 后台起播，并读起点与总时长
 快照 → button "播放视频"/"播放" → 点
 bsk evaluate 一次读齐 {currentTime, duration, paused, playbackRate}
 ```
 
-- 最小化之后**不要截图、不要 resize**：截图在最小化下会 30s 超时，读状态一律用 `bsk evaluate`。
+- 最小化之后读状态一律用 `bsk evaluate`（课程模块不需要截图）。
 - 起播后必须回读 `paused === false` 且 `playbackRate === 2`，否则补点播放/重设倍速再继续。
 
 **播放期间的操作边界**（AI 自己遵守，同时提醒用户）：
 
 - 页面上只做三件事：**补点播放、设倍速、静音**，其余点击一概不做；
 - 不切 tab、不关窗、不导航走、不 `stop session`；
-- 起播后对用户说一句：**“别点、别切、别关这个窗口，否则学习通会判定不可见而暂停。”**
+- 起播后可以提醒一句：**"最小化、熄屏、锁屏都不影响播放；别关这个窗口、别退出浏览器就行。"**（实测最小化与熄屏后进度照常推进）
 
 ### 3.1 轮询节奏（按倍速算）
 
@@ -375,7 +395,7 @@ bsk evaluate 读 {t, dur, paused, rate}
 - 目录里该节的橙色数字消失或变 ✓ 作为交叉确认；
 - 完成后立刻收手：**不点章节测验、不读分**——答题是 §5 的独立模块。
 
-### 3.3 暂停 / 休眠自愈（“点了继续”不等于恢复）
+### 3.3 暂停 / 睡眠后自愈（“点了继续”不等于恢复）
 
 暂停恢复靠轮询补点，但播放器可能点了继续、下一轮又停——**判据不是 `paused:false`，是进度有没有前进**：
 
@@ -384,14 +404,18 @@ bsk evaluate 读 {t, dur, paused, rate}
 | 读到 `paused:true` | 单轮 | 快照 → 点播放 → 下一轮复查 `t` |
 | 点完 `paused:false` 但 `t` 不涨 | 连续 2 轮（间隔 10s） | **假恢复**：`restore` 到前台 → 等 5s → 连读两次 `t` 确认在走 → 再最小化 |
 | restore 后仍不走 | 连续 2 轮 | reload 章节页（回到 0:00，点播放按服务端进度续播）→ 重设 2x + 静音 + 起播 |
-| 30 分钟内 ≥3 次暂停 | 累计 | 停止最小化：保持前台、被别的窗口盖住即可，汇报时注明 |
+| 30 分钟内 ≥3 次暂停 | 累计 | 先保持前台观察一轮（排除遮挡/节流）；仍频繁就按 §7 查播放器，汇报时注明 |
 
-**系统睡眠 = 必瘫**：整机挂起后视频停、计时停；醒来 daemon 可能已退、session 失效，只能重跑 `scripts/bsk-daemon.sh` + 重开 session + 重导航。所以**跑课前先关睡眠**：
+**熄屏 / 锁屏 / 短时睡眠都不用管，醒来复查一次就行**（熄屏后照常推进已实测；**真睡眠未实测**，按下面三态处理最稳）：
 
-```text
-Windows: powercfg /change standby-timeout-ac 0   # 接电源时从不睡眠；跑完按需改回
-macOS:   caffeinate -dimsu &                      # 或 系统设置→锁定屏幕→“进入睡眠”设为永不
-```
+| 醒来后读到 | 处理 |
+| --- | --- |
+| `t` 在涨、`paused:false` | 什么都不做，继续轮询 |
+| `paused:true`，或 `t` 连续 2 轮不动 | 补点播放，再按上表判“假恢复” |
+| `ensure daemon is running` / `no endpoint` | daemon 掉了：`scripts/bsk-daemon.sh` 重起 → 重开 session → 重导航章节 URL |
+
+- 例外是**长时间睡眠 + 断网**：daemon 的 `--daemon-idle 2h` 可能到期、session 可能失效，按上表第三行处理；
+- 想更稳可以跑课前关睡眠（`powercfg /change standby-timeout-ac 0`、`caffeinate -dimsu &`），**但这不是前置条件**。
 
 - daemon 的 `--daemon-idle 2h` / `--session-idle 2h` 在正常轮询（≤110s 一次）下不会触发；但中途空等超过 2 小时，daemon 会自己退出，恢复时按 §0.1 重新拉起。
 - 发生过“假恢复”升级时，汇报按 §6 补一句 `异常：播放中暂停 N 次，restore 后恢复`。
@@ -408,10 +432,10 @@ macOS:   caffeinate -dimsu &                      # 或 系统设置→锁定屏
 - 已经完成的节不碰（§1.2）；只做橙色数字的节，按目录顺序推进。
 - 进度回 0:00 / 切 tab 重载属正常，点播放会从服务端进度续播。
 
-## 5. 答题模块·章节测验（全程前台 + 截图）
+## 5. 答题模块·章节测验（截图读题）
 
 > **独立模块。** 与课程模块（§1–§4）互不调用：播放模块不点测验，本模块不碰播放器。
-> 与播放相反：**全程前台**、不最小化；**题干与选项只从截图读**（页面文本被私有字体混淆，读出来是乱字）。
+> 与播放不同：**读题只靠截图**；窗口最小化也能答题（实测截图正常），不用为了答题还原窗口。
 > **题型不限于选择/判断**：单选、多选、判断、填空、简答（含名词解释、论述）都要做，答案一律由模型按学科常识自己给，不查资料。
 > **开跑前先问用户**（§5.0）：答完直接交还是先给人看，由用户当场决定。
 
@@ -428,25 +452,27 @@ macOS:   caffeinate -dimsu &                      # 或 系统设置→锁定屏
 - 用户选「直接提交」→ 走 §5.5 的“直接提交”分支；
 - 中途不许改主意、不许两种混用。
 
-### 5.1 前台就位（本模块第一步）
+### 5.1 窗口就位（本模块第一步）
 
 ```text
 # 0) daemon / 浏览器 / session 见 §0.1–§0.2；从播放模块切过来时，窗口多半是最小化的
+#    —— 最小化也能答题，下面这步只是"想看着它答"时可选做的，不做也不影响
 #    Windows（本节默认）：
 computer_windows filter=<msedge|chrome>           # 拿到 Agent Window 的 hwnd
 computer_ui hwnd=<AgentWindow>                    # 读窗口节点
-computer_ui_action action=restore ref=<Window 节点 ref>   # 最小化状态先还原（只给 hwnd 会报 BAD_REQUEST）
+computer_ui_action action=restore ref=<Window 节点 ref>   # 可选：还原（只给 hwnd 会报 BAD_REQUEST）
 computer_windows focus_hwnd=<AgentWindow>
 #    任意 CLI：scripts/win-minimize.ps1 -Title "<document.title>" -Action restore
+#    还原前可先 -Action status 确认窗口还在、当前是否 iconic
 #    macOS：osascript 还原 + activate，见 §9.2
-bsk_assist resize width=1400 height=800           # 一次调好，别边答边缩
+bsk_assist resize width=1400 height=800           # 必做：宽度 <1200 选项会被挤走（最小化时也照做）
 bsk_page navigate <章节 URL>
-bsk_inspect screenshot                            # 能出图（<5s）即前台就绪
+bsk_inspect screenshot                            # 能出图（<5s）即就绪，最小化下也应能出图
 ```
 
-- **全程不许最小化**：最小化后截图 30s 超时，等于失去唯一读题通道；缩到 <1200 宽也会让选项/提交被挤走。
+- **最小化不影响答题**：实测最小化下截图、点选、提交都正常，不用为了答题把窗口还原。唯一要守的是宽度 ≥1200（更窄时选项/提交会被挤走）。
 - 保持 1400×800，答题过程中别再动窗口。
-- 已经还原但仍不出图 → 按 §7“答题截图超时”处理。
+- 出不了图 → 按 §7“答题截图超时”处理（先 restore + resize 再截，仍不行就是 session 掉了）。
 
 ### 5.2 进入测验
 
@@ -547,7 +573,7 @@ bsk_inspect screenshot        # 确认已进测验页 + 标题状态（已完成
 | 提交 | 页面一个“提交”，弹窗一个“提交/确定”，ref 不能混用 | 先点页面“提交”，再取弹窗内 ref 点；回读弹窗已消失 |
 | 题干/选项 | 私有字体混淆，文本全是乱字 | 只认截图；看不清就裁剪截图 |
 | 切 tab | 从测验切回视频，播放器重载回 `0:00`（服务端进度还在） | 本模块不切回视频；要继续播下一节交回课程模块 |
-| 窗口 | 最小化后截图 30s 超时 | 全程前台；被最小化先 restore + resize 再继续 |
+| 窗口 | 最小化下截图与操作正常（实测） | 只有出图超时才 restore + resize，按 §7 当异常排查 |
 
 **滚动**：一次快照就能拿到整页全部 `radio` ref，**不用滚动也能点**；要读下面的题就下滚再截图，别来回滚。
 
@@ -572,7 +598,7 @@ bsk_inspect screenshot        # 确认已进测验页 + 标题状态（已完成
 
 ### 6.1 收尾：任务结束就把 daemon 关掉
 
-最后一行汇报发完、确认本任务**没有待做的节**之后，显式关闭 daemon：
+最后一行汇报发完、确认本任务**没有待做的节**之后，**先按 §6.2 删除运行缓存**，再显式关闭 daemon：
 
 ```text
 ops_bash: bash "$HOME/.dsh/skills/chaoxing-watch/scripts/bsk-daemon.sh" stop
@@ -582,6 +608,31 @@ ops_bash: bash "$HOME/.dsh/skills/chaoxing-watch/scripts/bsk-daemon.sh" stop
 - **只在任务真的结束时调**：中途停会让下一个 `bsk_*` 调用报 `no endpoint`。
 - 用户说“等会儿继续”“先别关”，或明显还要刷/答下一节 → **不关**。
 - 不要指望空闲自动退出：扩展连着时 daemon 能挂几十分钟不退，所以“结束就关”只能靠显式 `stop`。
+
+### 6.2 临时文件：跑完自己删（不留截图）
+
+**从第一步起就固定用一个运行缓存目录**，所有截图、快照、临时 JSON 全写进去，**不要写进项目/仓库**：
+
+```bash
+CACHE_DIR="${TMPDIR:-/tmp}/chaoxing-watch/$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$CACHE_DIR"
+# 之后所有 screenshot --out、快照重定向、临时文件都放 "$CACHE_DIR/"
+```
+
+- Windows Git Bash 的 `/tmp` 就是用户临时目录；macOS 的 `$TMPDIR` 同理。都不在仓库里，不会污染 `git status`。
+- 用户明确要“留证据 / 给我看截图”时，只把**指定的那一张**另存到用户指定位置，其余照删。
+
+**收尾（和 §6.1 同一时刻）必须删，且要回读确认：**
+
+```bash
+rm -rf "$CACHE_DIR"
+test ! -e "$CACHE_DIR" && echo "cache cleaned: $CACHE_DIR"
+```
+
+- 正常结束、报错中止、用户说“先不刷了”都要删；只有用户明确说“截图留着”才不删。
+- 不许把 `shots/`、`*.png`、`*.txt` 快照留在仓库或工作区；跑完 `git status` 应保持干净。
+- **只删自己建的缓存目录**，不碰用户文件；路径不确定时先把 `echo "$CACHE_DIR"` 打出来核对，再删。
+- 已经落在仓库里的旧缓存（如 `shots/`）在下次收尾时一并删掉。
 
 ## 7. 故障恢复（两个模块共用）
 
@@ -601,7 +652,7 @@ ops_bash: bash "$HOME/.dsh/skills/chaoxing-watch/scripts/bsk-daemon.sh" stop
 | 播放键点了没反应 | 先关浮层，再看是否真在播；仍不动则重进章节页 |
 | 倍速点不到 / 默认不是 2x | 先 resize + 清遮挡再点；**点完必须回读** `menuitemradio "2x" [checked]` + 控制条 `2x` |
 | 目录没显示 ✓（其实已完成） | 目录刷新滞后：reload 一次章节页再读；以快照里的 `2.3 已完成` 为准 |
-| **答题截图 30s 超时** | 窗口被最小化/挂起：`computer_ui` 取窗口节点 → `action=restore ref=<窗口>` → `resize 1400×800` 再截；仍超时说明 session 掉了，重开 session 重导航 |
+| **答题截图 30s 超时** | 截图通道断了（最小化本身不是原因，实测最小化下图正常）：`computer_ui` 取窗口节点 → `action=restore ref=<窗口>` → `resize 1400×800` 再截；仍超时说明 session 掉了，重开 session 重导航 |
 | 选项点了不变蓝 | 重取 ref（别复用）；仍不蓝就点该选项的 label 文本 ref；不行再清浮层 |
 | 滚动后 ref 失效 | 滚动会重排，重新快照再点（§5.4） |
 | 提交后弹窗不关 | 弹窗按钮是 `确定`（屏幕上 `提交`）；重取弹窗内 ref，回读 `确认提交？` 已消失 |
@@ -619,6 +670,7 @@ ops_bash: bash "$HOME/.dsh/skills/chaoxing-watch/scripts/bsk-daemon.sh" stop
 - **不许把课程写死**：入口永远是 `i.chaoxing.com/`，课程按用户当前说的那门重新截图认；上一门课的 `courseId/clazzid/enc` 一律不复用。
 - 不许拿截图当汇报：完成情况一行字，除非用户要证据。
 - 没有页面证据，不许声称“播放完 / 任务点已完成 / 测验已提交”。
+- **不许把截图/快照留在工作区**：临时文件只写 §6.2 的运行缓存目录，收尾必须删掉并回读确认。
 
 ### 课程模块
 
@@ -629,7 +681,7 @@ ops_bash: bash "$HOME/.dsh/skills/chaoxing-watch/scripts/bsk-daemon.sh" stop
 
 ### 答题模块
 
-- **全程前台，不许最小化、不许后台运行**。
+- **没有截图就不许答题**：最小化不影响截图（实测），但一旦出不了图，先按 §7 排查，别凭记忆或推测作答。
 - **题干与选项只从截图读**，不许猜题、不许对乱字做“合理推测”。
 - **开跑前必须问“是否直接提交”**；用户选「先看」或无法回话时，**未经确认不许点提交**。
 - **不许留空题**：填空、简答也要答，答案由模型按学科常识给，不查资料、不编出处。
@@ -679,11 +731,11 @@ osascript -e "tell application \"$APP\" to activate"
   ```
 
 - **回读是硬要求**：`miniaturized` 为 `true` 才算最小化成功；没生效就按 9.2.1 退化。
-- 最小化后不要截图、不要 resize——和 Windows 一样，读状态用 `bsk evaluate`。
+- 最小化后读状态用 `bsk evaluate`（课程模块本来不需要截图）；答题模块若出不了图，再还原窗口重截。
 
 #### 9.2.1 退化（`miniaturized` 不生效时）
 
-不最小化，改为**保持前台、让窗口被别的窗口盖住**：视频仍在播（遮挡不等于隐藏）。若仍被判不可见而暂停，`bsk evaluate` 读到 `paused` 就补点一次播放；汇报时注明“macOS 未最小化”。
+不最小化也没关系：**保持前台、让窗口被别的窗口盖住**即可（实测遮挡和最小化都不影响播放）。若仍读到 `paused`，按 §3.3 补点一次播放；汇报时可注明“macOS 未最小化”。
 
 ### 9.3 冷启动的普通窗口（可选）
 
@@ -716,7 +768,7 @@ macOS 没有 hwnd，`computer_windows` 用不了：
 | osascript 提示不允许控制 / 无权限 | 系统设置 → 隐私与安全性 → 辅助功能，给运行 DSH 的终端（或 DSH 本体）授权后重试 |
 | `miniaturized` 报错或回读 false | 浏览器版本对 AppleScript 支持不同；走 9.2.1 退化，不要反复重试 |
 | `open -a` 失败 | 用完整路径 `.app`；确认装的是 Edge 或 Chrome，且扩展在里面 |
-| 截图 30s 超时 | 同 Windows：窗口被最小化/挂起；还原后再截（§9.2） |
+| 截图 30s 超时 | 先 restore + resize 再截（§9.2）；macOS 最小化下能否截图未实测，超时就当异常排查 |
 | Safari / Firefox | 不支持；只认装了 bsk 扩展的 Edge 或 Chrome |
 
 ## 10. 任意 CLI（Codex 等）
@@ -761,21 +813,17 @@ codex exec -s danger-full-access --skip-git-repo-check - < prompt.txt
 
 一节「任意课程」的章节：课程模块 2 倍速播放 30 秒（`paused=false`、`rate=2`），答题模块 3 题按截图作答并提交成功，全程约 12 万 token。截图直接由 Codex 读取，无需额外 OCR。
 
-## 11. 维护：三份副本必须同步
+## 11. 维护：装在多处时怎么对齐
 
-本 skill 同时存在三处，改完必须一起更新：
-
-| # | 位置 | 用途 |
-| --- | --- | --- |
-| 1 | `~/.dsh/skills/chaoxing-watch` | DSH 工作副本（通常在这里改） |
-| 2 | `~/.agents/skills/chaoxing-watch` | Codex 副本 |
-| 3 | `~/Desktop/chaoxing-watch` | 开源仓库（含 README / LICENSE） |
+装一份就能用（放哪个目录见 README「装到哪个目录」）。同一个 skill 如果在多个目录各放了一份，用仓库里的 `scripts/sync-copies.sh` 对齐：
 
 ```bash
-bash ~/Desktop/chaoxing-watch/scripts/sync-copies.sh          # 默认以 DSH 副本为源
-bash ~/Desktop/chaoxing-watch/scripts/sync-copies.sh <源目录>  # 或以指定目录为源
+bash scripts/sync-copies.sh status              # 只比对：一致=0，有差异=3
+bash scripts/sync-copies.sh diff                # 逐文件看差异
+bash scripts/sync-copies.sh --dry-run           # 预演，不写文件
+bash scripts/sync-copies.sh --source <源目录>    # 指定源（默认取 ~/.dsh/skills/chaoxing-watch）
 ```
 
-- 脚本逐份复制 SKILL.md + `scripts/` 两个脚本，并用 `diff` 校验，每行输出 `OK` 才算同步完成；
-- README、LICENSE、.gitignore 只留在仓库，不进技能目录；
-- **改完 skill 必须跑一次同步**，否则 Codex 和开源仓库会停在旧版本。
+- 逐文件**先比对再决定**：内容相同就 skip，绝不做无条件覆盖；要覆盖的旧版本会先备份到 `~/.chaoxing-watch-sync-backup/<时间戳>/`；
+- README、LICENSE、.gitignore 只留在仓库，不进技能目录。
+- ⚠️ 同步会替换磁盘上的文件，**正在跑的会话不会热更新**：它已加载的 SKILL.md 正文仍是旧的，而脚本是按路径执行的新版。所以别在一节课跑到一半时同步；改脚本请保持旧参数可用（向后兼容），否则旧正文会去调用新脚本。
