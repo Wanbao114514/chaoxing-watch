@@ -76,6 +76,8 @@ whenToUse: 用户要求“看学习通网课 / 刷任务点 / 看某门课第 x 
 | 4 | **超星已登录**，且账号已选课 | 打开 `i.chaoxing.com` 直接看到"我学的课"，不弹登录框 | 未登录 = **报错停止**，让用户自己登录后重跑 |
 | 5 | **仅 Windows**：会话文件策略 `danger-full-access` | 命名管道不被拦（跑 §0.1 看退出码） | 改策略后重跑；macOS 无此限制 |
 
+**macOS 首次**：系统设置 → 隐私与安全性 → **辅助功能**，勾上运行 DSH 的终端（或 DSH 本体）。不授权时 Edge 的最小化会报 `-1728 不允许辅助访问`，只能退到"不最小化"（§8.2.1）。
+
 **可选**：装 `dsh-ops` 插件能让读文件/日志类输出更省 token（有界输出、行号范围、批量读），不装也能跑；安装命令见 README。
 
 **已验证组合（2026-10）**：Windows + DSH、Windows + Codex CLI、macOS + DSH、macOS + CLI 均完整跑通；macOS 最小化下截图、真睡眠唤醒、暂停补点、daemon 断连、窗口误操作也已覆盖（§3.4、§6）。✅ 只代表主流程走通，换浏览器大版本或超星改版后要重测。
@@ -175,6 +177,7 @@ bsk_assist resize width=1400 height=800              # 在导航之前做，不�
 - `noFocus:false` **不是硬要求**：实测最小化、`noFocus:true` 起的后台窗口，都不影响学习通继续计时/播放。真正的前提只有一条——**截图要能出图**（答题模块依赖）。
 - 扩展状态确认：`bsk browsers` 里 EXT 列有版本号即已连接。
 - 已经在跑的浏览器不用重开；Agent Window 是独立窗口，和你自己的标签页互不干扰。
+- **开场提醒用户一句**："这个窗口（Agent Window）由我操作，**请不要在里面点击/输入/滚动**；要看进度可以看，但别动页面——你一点就会抢焦点、改状态，我这边可能判错。" 用户自己的标签页不受影响。
 
 #### 0.2.1 冷启动后收掉“普通窗口”（只剩 Agent Window）
 
@@ -653,28 +656,39 @@ APP="Microsoft Edge"      # 或 APP="Google Chrome"
 
 # 看窗口标题，确认哪个是 Agent Window
 osascript -e "tell application \"$APP\" to get name of windows"
-
-# 最小化（课程模块起播后）
-osascript -e "tell application \"$APP\" to set miniaturized of window 1 to true"
-osascript -e "tell application \"$APP\" to get miniaturized of window 1"    # 回读 true
-
-# 还原 + 置前（答题模块 §4.1）
-osascript -e "tell application \"$APP\" to set miniaturized of window 1 to false"
-osascript -e "tell application \"$APP\" to activate"
 ```
 
-- `window 1` 不一定是 Agent Window。分不清就先 `bsk_page navigate` 到章节页，让 Agent Window 有明确标题，再按标题定位：
+**Chrome**：AppleScript 字典里有 `miniaturized`：
 
-  ```bash
-  osascript -e "tell application \"$APP\" to set miniaturized of (first window whose name contains \"章节\") to true"
-  ```
+```bash
+osascript -e 'tell application "Google Chrome" to set miniaturized of window 1 to true'
+osascript -e 'tell application "Google Chrome" to get miniaturized of window 1'    # 回读 true
+osascript -e 'tell application "Google Chrome" to set miniaturized of window 1 to false'
+```
 
-- **回读是硬要求**：`miniaturized` 为 `true` 才算最小化成功；没生效就按 8.2.1 退化。
-- 最小化后读状态用 `bsk evaluate`；答题模块若出不了图，再还原窗口重截。
+**Edge**：字典里**没有** `miniaturized`，直接写会报
+`-1700 不能将 "miniaturized of window 1" 转换为 "specifier" 类型`。只能经 System Events 改 `AXMinimized`（需要辅助功能授权，开机第一次要先给）：
 
-#### 8.2.1 退化（`miniaturized` 不生效时）
+```bash
+osascript -e 'tell application "System Events" to set value of attribute "AXMinimized" of window 1 of process "Microsoft Edge" to true'
+osascript -e 'tell application "System Events" to get value of attribute "AXMinimized" of window 1 of process "Microsoft Edge"'    # 回读 true
+osascript -e 'tell application "System Events" to set value of attribute "AXMinimized" of window 1 of process "Microsoft Edge" to false'
+```
 
-不最小化也没关系：**保持前台、让窗口被别的窗口盖住**即可（实测遮挡和最小化都不影响播放）。若仍读到 `paused`，按 §3.4 补点一次播放；汇报时可注明"macOS 未最小化"。
+- 报 `-1728 不允许辅助访问` = 没授权：系统设置 → 隐私与安全性 → **辅助功能**，勾上运行 DSH 的终端（或 DSH 本体），再试一次（§8.5）。
+- `window 1` 不一定是 Agent Window：先 `bsk_page navigate` 到章节页让标题可辨，再列一遍窗口标题确认位置（Chrome 用 `get name of windows`；Edge 走 System Events 取窗口的 `name` 属性），别闭眼点 `window 1`。
+- **回读是硬要求**：拿到 `true` 才算最小化成功。
+- **最小化失败必须报错，不能当"已最小化"继续**：回读 false 或报错 → 先按上面修（授权 / 换写法 / 换浏览器）；仍不行就退到 §8.2.1，并**明确告诉用户** `最小化失败：<原因>，窗口会留在屏幕上`。
+- 最小化后读状态用 `bsk evaluate`（本来不需要截图）；答题模块若出不了图，按上面的 `false` 写法还原窗口再截。
+
+#### 8.2.1 退化：不最小化，用遮挡 / 保持前台
+
+不最小化不影响播放（实测遮挡和最小化都不影响进度），但要**显式说明**，不许静默降级：
+
+- 让它被别的窗口盖住即可；有的课程播放器会提示"观看时不可离开或最小化"，这种**保持前台反而更稳**，还能避免失焦触发的 `paused`；
+- 读到 `paused` 按 §3.4 补点，别在窗口上来回折腾；
+- 汇报或开场写一句 `最小化失败：<原因>，已改为保留窗口（不影响播放）`；
+- 用户要求必须最小化 → 先按 §8.5 授权；授权不了就停下问用户，不要自己假装成功。
 
 ### 8.3 冷启动的普通窗口（可选）
 
@@ -703,7 +717,9 @@ macOS 没有 hwnd，`computer_windows` 用不了：
 | 现象 | 处理 |
 | --- | --- |
 | osascript 提示不允许控制 / 无权限 | 系统设置 → 隐私与安全性 → 辅助功能，给运行 DSH 的终端（或 DSH 本体）授权后重试 |
-| `miniaturized` 报错或回读 false | 浏览器版本对 AppleScript 支持不同；走 8.2.1 退化，不要反复重试 |
+| Edge 报 `-1700 … 转换为 "specifier" 类型` | Edge 的 AppleScript 字典没有 `miniaturized`；改用 System Events 的 `AXMinimized`（§8.2），或换 Chrome |
+| `-1728 不允许辅助访问` | 辅助功能没授权：系统设置 → 隐私与安全性 → 辅助功能，勾上 DSH/终端；授权后再跑一次最小化 |
+| 最小化后播放总是暂停 / 课程提示"不可离开或最小化" | 这个播放器要求页面可见：不要最小化，保持前台或被遮挡，靠 §3.4 补点 |
 | `open -a` 失败 | 用完整路径 `.app`；确认装的是 Edge 或 Chrome，且扩展在里面 |
 | 截图 30s 超时 | 先 restore + resize 再截（§8.2）；macOS 最小化下截图正常（实测），仍超时说明 session 掉了，重开 session 重导航 |
 | Safari / Firefox | 不支持；只认装了 bsk 扩展的 Edge 或 Chrome |
