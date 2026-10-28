@@ -15,7 +15,7 @@
 #   SYNC_TARGETS     覆盖目标列表，用 ":" 或换行分隔（主要给测试用）
 #   SYNC_BACKUP_ROOT 备份根目录（默认 ~/.chaoxing-watch-sync-backup）
 #
-# 同步内容: SKILL.md + scripts/ 下两个脚本（README/LICENSE 只在仓库里）
+# 同步内容: SKILL.md + scripts/ 下所有脚本(README/LICENSE/.gitignore 只在仓库;sync-copies.sh 自身不同步)
 #
 # 行为约定（针对「改了仓库又被旧副本覆盖」这个坑）:
 #   1. 逐文件先比对内容，相同就 skip —— 不做无意义的覆盖（旧版是无条件 cp -f）;
@@ -26,7 +26,8 @@
 # 退出码: 0 = 一致或已同步 | 1 = 有失败 | 2 = 用法错误 | 3 = 只读模式下发现差异
 set -euo pipefail
 
-FILES=(SKILL.md scripts/bsk-daemon.sh scripts/win-minimize.ps1)
+# 文件清单:SKILL.md + scripts/ 下除本脚本外的所有文件(自动发现,加新脚本不用改这里)
+FILES=(SKILL.md)
 
 MODE=sync          # sync | status | diff | preview
 SRC=""
@@ -81,6 +82,17 @@ fi
 
 [ -f "$SRC/SKILL.md" ] || { echo "FAIL: 源目录里没有 SKILL.md: $SRC" >&2; exit 1; }
 SRC_ABS="$(cd "$SRC" && pwd)"
+
+# scripts/ 自动纳入(本脚本自身不同步):以后加脚本不用再改清单,避免漏同步
+if [ -d "$SRC/scripts" ]; then
+  for f in "$SRC"/scripts/*; do
+    [ -f "$f" ] || continue
+    b="$(basename "$f")"
+    [ "$b" = "sync-copies.sh" ] && continue
+    FILES+=("scripts/$b")
+  done
+fi
+
 STAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP_ROOT="${SYNC_BACKUP_ROOT:-$HOME/.chaoxing-watch-sync-backup}/$STAMP"
 want_write=0

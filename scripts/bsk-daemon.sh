@@ -5,6 +5,7 @@
 #   bash bsk-daemon.sh                # = start,空闲存活 2h
 #   bash bsk-daemon.sh start [idle]   # 幂等启动,已在跑直接返回
 #   bash bsk-daemon.sh stop           # 任务收尾:关掉 daemon(连 Agent Window 一起收)
+#   bash bsk-daemon.sh stop --force   # 无视并发守卫,强制停(会收掉别的任务的窗口)
 #   bash bsk-daemon.sh status         # 只读探测
 #   bash bsk-daemon.sh doctor         # 只读自检:依赖 / daemon / 浏览器接入,不启动任何东西
 #
@@ -26,12 +27,14 @@ set -u
 MODE="${1:-start}"
 IDLE="${2:-2h}"
 SESSION_IDLE="${SESSION_IDLE:-2h}"
+FORCE="${2:-}"
 LOG="${TMPDIR:-/tmp}/bsk-daemon-start.log"
 
 find_bsk() {
   if command -v bsk >/dev/null 2>&1; then command -v bsk; return 0; fi
-  for p in "/c/Users/$USER/bin/bsk.exe" "$HOME/bin/bsk.exe" \
-           "/c/Users/$USER/.cargo/bin/bsk.exe" "$HOME/.cargo/bin/bsk.exe" \
+  local u="${USER:-$(id -un 2>/dev/null || echo nobody)}"
+  for p in "/c/Users/$u/bin/bsk.exe" "$HOME/bin/bsk.exe" \
+           "/c/Users/$u/.cargo/bin/bsk.exe" "$HOME/.cargo/bin/bsk.exe" \
            "$HOME/.local/bin/bsk"; do   # 最后一项是 macOS/Linux install.sh 的默认位置
     [ -x "$p" ] && { echo "$p"; return 0; }
   done
@@ -43,7 +46,9 @@ if ! BSK="$(find_bsk)"; then
   BSK=""
   # doctor 要把其余检查跑完才有诊断价值,所以只在真正要干活时才因缺 bsk 直接退出
   if [ "$MODE" != "doctor" ]; then
-    echo "FAIL: 找不到 bsk CLI。把 bsk.exe 放到 ~/.cargo/bin/ 或 ~/bin/,或改 profile 的 bskPath。" >&2
+    echo "FAIL: 找不到 bsk CLI。" >&2
+    echo "HINT: 从 https://github.com/Tencent/BrowserSkill 的 install.ps1(Windows) / install.sh(macOS) 安装," >&2
+    echo "      或把已有的 bsk.exe 放到 ~/.cargo/bin/ 或 ~/bin/,或把 profile 的 bskPath 指到实际路径。" >&2
     exit 4
   fi
 fi
@@ -101,16 +106,30 @@ do_start() {
 }
 
 do_stop() {
-  local out sess
+  local out sess count
   out="$(probe)"
   if ! is_up "$out"; then
     echo "OK: daemon 本就没在跑,无需停止。"
     return 0
   fi
 
+  # 并发守卫:bsk daemon 是整机的,停掉会连别的任务的 Agent Window 一起收。
+  # 本任务结束时通常正好剩 1 个 session(我们自己的,skill 要求任务没结束不停 session);
+  # 多于 1 个说明还有别的会话在用 —— 默认不动,要停必须 --force。
   sess="$("$BSK" session list --json 2>/dev/null | tr -d '[:space:]')"
+  count=0
   if [ -n "$sess" ] && [ "$sess" != "[]" ]; then
-    echo "NOTE: 仍有活动 Agent Window 会话,将随 daemon 一起关闭。"
+    count="$(printf '%s' "$sess" | grep -o '"session_id"' | wc -l | tr -d ' ')"
+    [ "$count" -eq 0 ] && count=1
+  fi
+
+  if [ "$count" -gt 1 ] && [ "${FORCE:-}" != "--force" ]; then
+    echo "SKIP: 当前有 ${count} 个活动 session,daemon 可能正被别的任务使用,未停止。"
+    echo "     确认没有别的任务在跑后,用: bash bsk-daemon.sh stop --force"
+    return 0
+  fi
+  if [ "$count" -gt 1 ]; then
+    echo "NOTE: --force 生效,${count} 个 session 将随 daemon 一起关闭。"
   fi
 
   "$BSK" daemon stop >/dev/null 2>&1
@@ -147,6 +166,8 @@ do_doctor() {
 
   if [ -z "$BSK" ]; then
     fail_ "bsk CLI: 未找到（PATH / ~/.cargo/bin / ~/bin 都没有）"
+    printf '       → 安装: https://github.com/Tencent/BrowserSkill 的 install.ps1(Windows) / install.sh(macOS)\n'
+    printf '         或把 bsk.exe 放进 ~/.cargo/bin/,再把 bskPath 指到实际路径\n'
   else
     ver="$("$BSK" --version 2>/dev/null | head -1)"
     if [ -n "$ver" ]; then
@@ -163,7 +184,7 @@ do_doctor() {
       ok_ "daemon: 运行中 (pid ${pid:-?})"
       browsers="$(printf '%s' "$out" | grep -c '"instance_id"')"
       if [ "$browsers" -eq 0 ]; then
-        warn_ "浏览器: 尚未接入 —— 用 app_launch 打开 Edge/Chrome,等 5–10s 再复查"
+        warn_ "浏览器: 尚未接入 —— 用 app_launch 打开 Edge/Chrome,并确认 BrowserSkill 扩展显示 Connected"
       else
         ok_ "浏览器: ${browsers} 个实例已接入"
       fi
@@ -190,5 +211,5 @@ case "$MODE" in
     if is_up "$out"; then report "$out"; exit 0; fi
     echo "daemon 未运行。"; exit 1 ;;
   doctor)   do_doctor; exit $? ;;
-  *)  echo "用法: bash bsk-daemon.sh [start [idle] | stop | status | doctor]" >&2; exit 2 ;;
+  *)  echo "用法: bash bsk-daemon.sh [start [idle] | stop [--force] | status | doctor]" >&2; exit 2 ;;
 esac
