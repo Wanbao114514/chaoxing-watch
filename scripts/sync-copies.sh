@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# sync-copies.sh — 把 chaoxing-watch 同步到所有副本，保证三处一致
+# sync-copies.sh — 把 chaoxing-watch 同步到所有副本，保证一致
 #
 # 用法:
 #   bash sync-copies.sh                     # 同步（默认以 DSH 副本为源）
@@ -11,7 +11,6 @@
 #   bash sync-copies.sh --no-backup         # 覆盖前不备份（默认会备份）
 #
 # 环境变量:
-#   DESKTOP_REPO     桌面仓库副本路径（默认 ~/Desktop/chaoxing-watch）
 #   SYNC_TARGETS     覆盖目标列表，用 ":" 或换行分隔（主要给测试用）
 #   SYNC_BACKUP_ROOT 备份根目录（默认 ~/.chaoxing-watch-sync-backup）
 #
@@ -67,16 +66,14 @@ while [ $# -gt 0 ]; do
 done
 
 SRC="${SRC:-$HOME/.dsh/skills/chaoxing-watch}"
-DESKTOP_REPO="${DESKTOP_REPO:-$HOME/Desktop/chaoxing-watch}"
 
-# 目标列表：默认三处；SYNC_TARGETS 可覆盖（测试用）
+# 目标列表：默认两处技能目录；SYNC_TARGETS 可覆盖（测试用）
 if [ -n "${SYNC_TARGETS:-}" ]; then
   IFS=':' read -r -a TARGETS <<< "$(printf '%s' "$SYNC_TARGETS" | tr '\n' ':')"
 else
   TARGETS=(
     "$HOME/.dsh/skills/chaoxing-watch"
     "$HOME/.agents/skills/chaoxing-watch"
-    "$DESKTOP_REPO"
   )
 fi
 
