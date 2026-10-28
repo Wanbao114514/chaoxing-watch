@@ -132,8 +132,8 @@ DSH + `deepseek-flash` 低思考档、空闲时段跑一节：**20 分钟视频 
 ## 运行时注意
 
 - **会有两个浏览器窗口**：普通窗口 + Agent Window（真正在操作的那个）。收普通窗口只能用 `powershell -NoProfile -File scripts/win-minimize.ps1 -Hwnd <NORMAL> -Action close`，**别用 `alt+F4`**——焦点在 Agent Window 上时会把它关掉，整条 bsk 链路一起断。
-- **别关正在播放的页面、别退出浏览器**：窗口最小化、切到别的程序、熄屏都不影响（实测进度照常推进）。
-- **熄屏 / 锁屏不用管**：实测进度照常推进。**真睡眠没实测**，按一般逻辑处理最稳——醒来让 agent 读一次播放状态，卡住就补点，daemon 掉了就 `scripts/bsk-daemon.sh` 重开。
+- **别关正在播放的页面、别退出浏览器**：窗口最小化、切到别的程序、熄屏在**实测环境（Windows 11 + Edge，2026-10）**下进度照常推进；其它浏览器/版本仍可能后台节流，播放循环会一直复查，真停了会补点。
+- **熄屏 / 锁屏通常不用管**：同上，实测照常推进；**真睡眠没实测**——醒来让 agent 读一次播放状态，卡住就补点，daemon 掉了就 `scripts/bsk-daemon.sh` 重开。
 - **任务没结束别 `stop session`**：Agent Window 一关，浏览器退出，所有 `bsk_*` 失效。
 - **答题模块最小化也能答**：实测最小化下截图、点选、提交都正常，只要宽度别低于 1200。
 - **收尾会关 daemon**：`bsk-daemon.sh stop` 是整机的，脚本发现还有别的活动 session 会拒绝停止（打印 `SKIP:`），避免误伤另一个任务；确认要关用 `stop --force`。
